@@ -25,12 +25,11 @@ int main(int argc, char *argv[]) {
   int niters = atoi(argv[3]);
 
   // Allocate the image
-  double *image = malloc(sizeof(double)*nx*ny);
-  double *tmp_image = malloc(sizeof(double)*nx*ny);
+  double *image = malloc(sizeof(double)*(nx+2)*(ny+2));
+  double *tmp_image = malloc(sizeof(double)*(nx+2)*(ny+2));
 
   // Set the input image
   init_image(nx, ny, image, tmp_image);
-
   // Call the stencil kernel
   double tic = wtime();
   for (int t = 0; t < niters; ++t) {
@@ -50,30 +49,14 @@ int main(int argc, char *argv[]) {
 }
 
 void stencil(const int nx, const int ny, double *  image, double *  tmp_image) {
-  tmp_image[0] = image[0] * 0.6 + image[ny] * 0.1 + image[1] * 0.1;
-  tmp_image[(nx-1)*ny] = image[(nx-1)*ny] * 0.6 + image[1+(nx-1)*ny] * 0.1 + image[((nx-1)-1)*ny] * 0.1;
-  tmp_image[(ny-1)] = image[(ny-1)] * 0.6 + image[(ny-1)-1] * 0.1 + image[(ny-1)+ ny] * 0.1;
-  tmp_image[(ny-1)+(nx-1)*ny] = image[(ny-1)+(nx-1)*ny] * 0.6 + image[(ny-1)-1+(nx-1)*ny] * 0.1 + image[(ny-1) +((nx-1)-1)*ny] * 0.1;
-
-  for (int i = 1; i < nx-1; ++i) {
-    tmp_image[i*ny] = image[i*ny] * 0.6 + image[(i-1)*ny] * 0.1 + image[(i+1)*ny] * 0.1 + image[1+i*ny] * 0.1;
-  }
-  for (int i = 1; i < nx-1; ++i) {
-    tmp_image[ny-1+i*ny] = image[ny-1+i*ny] * 0.6 + image[ny-1 +(i-1)*ny] * 0.1 + image[ny-1 +(i+1)*ny] * 0.1 + image[ny-2+i*ny] * 0.1;
-  }
-  for (int j = 1; j < ny-1; ++j) {
-    tmp_image[j] = image[j] * 0.6 + image[j+ny] * 0.1 + image[j-1] * 0.1 + image[j+1] * 0.1;
-  }
-  for (int j = 1; j < ny-1; ++j) {
-    tmp_image[j+(nx-1)*ny] = image[j+(nx-1)*ny] * 0.6 + image[j +(nx-2)*ny] * 0.1 + image[j-1+(nx-1)*ny] * 0.1 + image[j+1+(nx-1)*ny] * 0.1;
-  }
-  for (int i = 1; i < nx-1; ++i) {
-    for (int j = 1; j < ny-1; ++j) {
-      tmp_image[j+i*ny] = image[j+i*ny] * 0.6;
-      tmp_image[j+i*ny] += image[j  +(i-1)*ny] * 0.1;
-      tmp_image[j+i*ny] += image[j  +(i+1)*ny] * 0.1;
-      tmp_image[j+i*ny] += image[j-1+i*ny] * 0.1;
-      tmp_image[j+i*ny] += image[j+1+i*ny] * 0.1;
+  for (int i = 1; i < nx+1; ++i) {
+    int row = i*(ny+2);
+    for (int j = 1; j < ny+1; ++j) {
+      tmp_image[j+row] = image[j+row] * 0.6;
+      tmp_image[j+row] += image[j-1+row] * 0.1;
+      tmp_image[j+row] += image[j+1+row] * 0.1;
+      tmp_image[j+row] += image[j+(i-1)*(ny+2)] * 0.1;
+      tmp_image[j+row] += image[j+(i+1)*(ny+2)] * 0.1;
     }
   }
 }
@@ -81,8 +64,8 @@ void stencil(const int nx, const int ny, double *  image, double *  tmp_image) {
 // Create the input image
 void init_image(const int nx, const int ny, double *  image, double *  tmp_image) {
   // Zero everything
-  for (int j = 0; j < ny; ++j) {
-    for (int i = 0; i < nx; ++i) {
+  for (int j = 0; j < ny+2; ++j) {
+    for (int i = 0; i < nx+2; ++i) {
       image[j+i*ny] = 0.0;
       tmp_image[j+i*ny] = 0.0;
     }
@@ -91,10 +74,10 @@ void init_image(const int nx, const int ny, double *  image, double *  tmp_image
   // Checkerboard
   for (int j = 0; j < 8; ++j) {
     for (int i = 0; i < 8; ++i) {
-      for (int jj = j*ny/8; jj < (j+1)*ny/8; ++jj) {
-        for (int ii = i*nx/8; ii < (i+1)*nx/8; ++ii) {
+      for (int jj = (j*ny/8)+1; jj < ((j+1)*ny/8)+1; ++jj) {
+        for (int ii = (i*nx/8)+1; ii < ((i+1)*nx/8)+1; ++ii) {
           if ((i+j)%2)
-          image[jj+ii*ny] = 100.0;
+          image[jj+ii*(ny+2)] = 100.0;
         }
       }
     }
@@ -109,6 +92,12 @@ void output_image(const char * file_name, const int nx, const int ny, double *im
   if (!fp) {
     fprintf(stderr, "Error: Could not open %s\n", OUTPUT_FILE);
     exit(EXIT_FAILURE);
+  }
+
+  for (int i = 1; i < nx+1; ++i) {
+    for (int j = 1; j < ny+1; ++j) {
+      image[j-1 + (i-1)*ny] = image[j+i*(ny+2)];
+    }
   }
 
   // Ouptut image header
