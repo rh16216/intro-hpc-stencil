@@ -6,9 +6,9 @@
 // Define output file name
 #define OUTPUT_FILE "stencil.pgm"
 
-void stencil(const int nx, const int ny, double *  image, double *  tmp_image);
-void init_image(const int nx, const int ny, double *  image, double *  tmp_image);
-void output_image(const char * file_name, const int nx, const int ny, double *image);
+void stencil(const int nx, const int ny, float *  image, float *  tmp_image);
+void init_image(const int nx, const int ny, float *  image, float *  tmp_image);
+void output_image(const char * file_name, const int nx, const int ny, float *image);
 double wtime(void);
 
 int main(int argc, char *argv[]) {
@@ -25,8 +25,8 @@ int main(int argc, char *argv[]) {
   int niters = atoi(argv[3]);
 
   // Allocate the image
-  double *image = malloc(sizeof(double)*(nx+2)*(ny+2));
-  double *tmp_image = malloc(sizeof(double)*(nx+2)*(ny+2));
+  float *image = malloc(sizeof(double)*(nx+2)*(ny+2));
+  float *tmp_image = malloc(sizeof(double)*(nx+2)*(ny+2));
 
   // Set the input image
   init_image(nx, ny, image, tmp_image);
@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
   free(image);
 }
 
-void stencil(const int nx, const int ny, double *  image, double *  tmp_image) {
+void stencil(const int nx, const int ny, float *  image, float *  tmp_image) {
   for (int i = 1; i < nx+1; ++i) {
     for (int j = 1; j < ny+1; ++j) {
       tmp_image[j+i*(ny+2)] = image[j+i*(ny+2)] * 0.6;
@@ -61,7 +61,7 @@ void stencil(const int nx, const int ny, double *  image, double *  tmp_image) {
 }
 
 // Create the input image
-void init_image(const int nx, const int ny, double *  image, double *  tmp_image) {
+void init_image(const int nx, const int ny, float *  image, float *  tmp_image) {
   // Zero everything
   for (int j = 0; j < ny+2; ++j) {
     for (int i = 0; i < nx+2; ++i) {
@@ -84,7 +84,7 @@ void init_image(const int nx, const int ny, double *  image, double *  tmp_image
 }
 
 // Routine to output the image in Netpbm grayscale binary image format
-void output_image(const char * file_name, const int nx, const int ny, double *image) {
+void output_image(const char * file_name, const int nx, const int ny, float *image) {
 
   // Open output file
   FILE *fp = fopen(file_name, "w");
