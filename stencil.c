@@ -25,8 +25,8 @@ int main(int argc, char *argv[]) {
   int niters = atoi(argv[3]);
 
   // Allocate the image
-  float *image = malloc(sizeof(double)*(nx+2)*(ny+2));
-  float *tmp_image = malloc(sizeof(double)*(nx+2)*(ny+2));
+  float * restrict image = malloc(sizeof(double)*(nx+2)*(ny+2));
+  float * restrict tmp_image = malloc(sizeof(double)*(nx+2)*(ny+2));
 
   // Set the input image
   init_image(nx, ny, image, tmp_image);
