@@ -1,2 +1,2 @@
-stencil: stencil.c
-	icc -O2 -xHOST -std=c99 -Wall $^ -o $@
+skeleton2-headed-plate: skeleton2-heated-plate.c
+	mpicc -O2 -std=c99 -Wall $^ -o $@
