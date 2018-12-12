@@ -118,6 +118,126 @@ void output_image(const char * file_name, const int nx, const int ny, float **im
 
 }
 
+
+void stencil(float **u, float **w, float *sendbuf, float *recvbuf,
+  int local_nrows, int local_ncols, int rank, int size, MPI_Status status){
+
+  int ii, jj;             /* row and column indices for the grid */
+  int tag = 0;           /* scope for adding extra information to a message */
+  int left;              /* the rank of the process to the left */
+  int right;             /* the rank of the process to the right */
+
+  /*
+  ** determine process ranks to the left and right of rank
+  ** respecting periodic boundary conditions
+  */
+  left = (rank == MASTER) ? (rank + size - 1) : (rank - 1);
+  right = (rank + 1) % size;
+  /*
+  ** halo exchange for the local grids w:
+  ** - first send to the left and receive from the right,
+  ** - then send to the right and receive from the left.
+  ** for each direction:
+  ** - first, pack the send buffer using values from the grid
+  ** - exchange using MPI_Sendrecv()
+  ** - unpack values from the recieve buffer into the grid
+  */
+
+  /* send to the left, receive from right */
+  if (rank != 0){
+    for(ii=0;ii<local_nrows+2;ii++){
+      sendbuf[ii] = w[ii][1];
+      //printf("left send %6.2f\n", sendbuf[ii]);
+    }
+    if (rank == size-1){
+      MPI_Send(sendbuf, local_nrows+2, MPI_FLOAT,
+               left, tag, MPI_COMM_WORLD);
+    }
+    else{
+      //printf("Start send left from rank: %d\n", rank);
+      MPI_Sendrecv(sendbuf, local_nrows+2, MPI_FLOAT, left, tag,
+       recvbuf, local_nrows+2, MPI_FLOAT, right, tag,
+       MPI_COMM_WORLD, &status);
+      //printf("End send left from rank: %d\n", rank);
+    }
+   }
+    if (rank != size-1){
+      if (rank == 0){
+        MPI_Recv(recvbuf, local_nrows+2, MPI_FLOAT,
+                 right, tag, MPI_COMM_WORLD, &status);
+      }
+      //printf("Start recv left to rank: %d\n", rank);
+      for(ii=0;ii<local_nrows+2;ii++){
+        w[ii][local_ncols + 1] = recvbuf[ii];
+        //printf("left recv %6.2f\n", w[ii][local_ncols + 1]);
+      }
+      //printf("End recv left to rank: %d\n", rank);
+    }
+  /* send to the right, receive from left */
+  if (rank != size-1){
+    for(ii=0;ii<local_nrows+2;ii++){
+      sendbuf[ii] = w[ii][local_ncols];
+      //printf("right send %6.2f\n", sendbuf[ii]);
+    }
+    if (rank == 0){
+      MPI_Send(sendbuf, local_nrows+2, MPI_FLOAT,
+               right, tag, MPI_COMM_WORLD);
+    }
+    else{
+      //printf("Start send right from rank: %d\n", rank);
+      MPI_Sendrecv(sendbuf, local_nrows+2, MPI_FLOAT, right, tag,
+       recvbuf, local_nrows+2, MPI_FLOAT, left, tag,
+       MPI_COMM_WORLD, &status);
+      //printf("End send right from rank: %d\n", rank);
+    }
+   }
+   if (rank != 0){
+    if (rank == size-1){
+       MPI_Recv(recvbuf, local_nrows+2, MPI_FLOAT,
+                left, tag, MPI_COMM_WORLD, &status);
+    }
+    //printf("Start recv right to rank: %d\n", rank);
+    for(ii=0;ii<local_nrows+2;ii++){
+      w[ii][0] = recvbuf[ii];
+      //printf("right recv %6.2f\n", w[ii][0]);
+    }
+    //printf("End recv right to rank: %d\n", rank);
+  }
+  /*
+  ** copy the old solution into the u grid
+  */
+  //for (int q = 0; q < local_nrows+2; q++){
+  //  printf("%f\n", w[q][0]);
+  //}
+  //printf("NO MORE COMMUNICATION\n");
+  /*
+  ** compute new values of w using u
+  ** looping extents depend on rank, as we don't
+  ** want to overwrite any boundary conditions
+  */
+  for(ii=1;ii<local_nrows+1;ii++) {
+//     if(rank == 0) {
+// start_col = 2;
+// end_col = local_ncols;
+//     }
+//     else if(rank == size -1) {
+// start_col = 1;
+// end_col = local_ncols - 1;
+//     }
+//     else {
+// start_col = 1;
+// end_col = local_ncols;
+//     }
+    for(jj=1;jj<local_ncols+1;jj++) {
+      u[ii][jj] = w[ii][jj-1] * 0.1f;
+      u[ii][jj] += w[ii][jj] * 0.6f;
+      u[ii][jj] += w[ii][jj+1] * 0.1f;
+      u[ii][jj] += w[ii-1][jj] * 0.1f;
+      u[ii][jj] += w[ii+1][jj] * 0.1f;
+    }
+  }
+}
+
 int main(int argc, char* argv[])
 {
   int ii, jj;             /* row and column indices for the grid */
@@ -125,11 +245,9 @@ int main(int argc, char* argv[])
   //int start_col,end_col; /* rank dependent looping indices */
   int iter;              /* index for timestep iterations */
   int rank;              /* the rank of this process */
-  int left;              /* the rank of the process to the left */
-  int right;             /* the rank of the process to the right */
   int size;              /* number of processes in the communicator */
-  int tag = 0;           /* scope for adding extra information to a message */
   MPI_Status status;     /* struct used by MPI_Recv */
+  int tag = 0;           /* scope for adding extra information to a message */
   int local_nrows;       /* number of rows apportioned to this rank */
   int local_ncols;       /* number of columns apportioned to this rank */
   int remote_ncols;      /* number of columns apportioned to a remote rank */
@@ -143,7 +261,7 @@ int main(int argc, char* argv[])
   // Initiliase problem dimensions from command line arguments
   int nx = atoi(argv[1]);
   int ny = atoi(argv[2]);
-  int niters = 2*atoi(argv[3]);
+  int niters = atoi(argv[3]);
 
   /* MPI_Init returns once it has started up processes */
   /* get size and rank */
@@ -151,12 +269,6 @@ int main(int argc, char* argv[])
   MPI_Comm_size( MPI_COMM_WORLD, &size );
   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
 
-  /*
-  ** determine process ranks to the left and right of rank
-  ** respecting periodic boundary conditions
-  */
-  left = (rank == MASTER) ? (rank + size - 1) : (rank - 1);
-  right = (rank + 1) % size;
 
   /*
   ** determine local grid size
@@ -208,113 +320,8 @@ int main(int argc, char* argv[])
   */
   double tic = wtime();
   for(iter=0;iter<niters;iter++) {
-    /*
-    ** halo exchange for the local grids w:
-    ** - first send to the left and receive from the right,
-    ** - then send to the right and receive from the left.
-    ** for each direction:
-    ** - first, pack the send buffer using values from the grid
-    ** - exchange using MPI_Sendrecv()
-    ** - unpack values from the recieve buffer into the grid
-    */
-
-    /* send to the left, receive from right */
-    if (rank != 0){
-      for(ii=0;ii<local_nrows+2;ii++){
-        sendbuf[ii] = w[ii][1];
-      }
-      if (rank == size-1){
-        MPI_Send(sendbuf, local_nrows+2, MPI_FLOAT,
-                 left, tag, MPI_COMM_WORLD);
-      }
-      else{
-        //printf("Start send left from rank: %d\n", rank);
-        MPI_Sendrecv(sendbuf, local_nrows+2, MPI_FLOAT, left, tag,
-    		 recvbuf, local_nrows+2, MPI_FLOAT, right, tag,
-    		 MPI_COMM_WORLD, &status);
-        //printf("End send left from rank: %d\n", rank);
-      }
-     }
-      if (rank != size-1){
-        if (rank == 0){
-          MPI_Recv(recvbuf, local_nrows+2, MPI_FLOAT,
-                   right, tag, MPI_COMM_WORLD, &status);
-        }
-        //printf("Start recv left to rank: %d\n", rank);
-        for(ii=0;ii<local_nrows+2;ii++){
-          w[ii][local_ncols + 1] = recvbuf[ii];
-        }
-        //printf("End recv left to rank: %d\n", rank);
-      }
-    /* send to the right, receive from left */
-    if (rank != size-1){
-      for(ii=0;ii<local_nrows+2;ii++){
-        sendbuf[ii] = w[ii][local_ncols];
-      }
-      if (rank == 0){
-        MPI_Send(sendbuf, local_nrows+2, MPI_FLOAT,
-                 right, tag, MPI_COMM_WORLD);
-      }
-      else{
-        //printf("Start send right from rank: %d\n", rank);
-        MPI_Sendrecv(sendbuf, local_nrows+2, MPI_FLOAT, right, tag,
-    		 recvbuf, local_nrows+2, MPI_FLOAT, left, tag,
-    		 MPI_COMM_WORLD, &status);
-        //printf("End send right from rank: %d\n", rank);
-      }
-     }
-     if (rank != 0){
-      if (rank == size-1){
-         MPI_Recv(recvbuf, local_nrows+2, MPI_FLOAT,
-                  left, tag, MPI_COMM_WORLD, &status);
-      }
-      //printf("Start recv right to rank: %d\n", rank);
-      for(ii=0;ii<local_nrows+2;ii++){
-        w[ii][0] = recvbuf[ii];
-      }
-      //printf("End recv right to rank: %d\n", rank);
-    }
-    /*
-    ** copy the old solution into the u grid
-    */
-    //for (int q = 0; q < local_nrows+2; q++){
-    //  printf("%f\n", w[q][0]);
-    //}
-    //printf("NO MORE COMMUNICATION\n");
-
-
-    for(ii=0;ii<local_nrows+2;ii++) {
-      for(jj=0;jj<local_ncols + 2;jj++) {
-	u[ii][jj] = w[ii][jj];
-      }
-    }
-
-    /*
-    ** compute new values of w using u
-    ** looping extents depend on rank, as we don't
-    ** want to overwrite any boundary conditions
-    */
-    for(ii=1;ii<local_nrows+1;ii++) {
-  //     if(rank == 0) {
-	// start_col = 2;
-	// end_col = local_ncols;
-  //     }
-  //     else if(rank == size -1) {
-	// start_col = 1;
-	// end_col = local_ncols - 1;
-  //     }
-  //     else {
-	// start_col = 1;
-	// end_col = local_ncols;
-  //     }
-      for(jj=1;jj<local_ncols+1;jj++) {
-        w[ii][jj] = u[ii][jj-1] * 0.1f;
-        w[ii][jj] += u[ii][jj] * 0.6f;
-        w[ii][jj] += u[ii][jj+1] * 0.1f;
-        w[ii][jj] += u[ii-1][jj] * 0.1f;
-        w[ii][jj] += u[ii+1][jj] * 0.1f;
-      }
-    }
+    stencil(u, w, sendbuf, recvbuf, local_nrows, local_ncols, rank, size, status);
+    stencil(w, u, sendbuf, recvbuf, local_nrows, local_ncols, rank, size, status);
    }
    double toc = wtime();
    if (rank == 0){
@@ -371,8 +378,10 @@ int main(int argc, char* argv[])
   //     printf("\n");
   //   }
   // }
-
-  output_image(OUTPUT_FILE, nx, ny, out);
+  if(rank == MASTER){
+    //printf("FILE OUTPUT\n");
+    output_image(OUTPUT_FILE, nx, ny, out);
+  }
    /* don't forget to tidy up when we're done */
    MPI_Finalize();
 
