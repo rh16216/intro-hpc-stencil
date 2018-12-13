@@ -58,28 +58,44 @@ int calc_ncols_from_rank(int rank, int size, int ny);
 double wtime(void);
 
 // Create the input image
-void init_image(const int nx, const int ny, float **  image, float **  tmp_image, int size) {
+void init_image(const int nx, const int ny, float **  image, float **  tmp_image, int size, int rank, int local_ncols) {
+  //Generate entire Checkerboard
+  float **checker = (float**)malloc(sizeof(float*) * (nx+2));
+  for (int ii=0;ii<nx+2;ii++) {
+    checker[ii] = (float*)malloc(sizeof(float) * (ny+2));
+  }
+
   // Zero everything
     for (int i = 0; i < nx+2; ++i) {
       for (int j = 0; j < ny+2; ++j) {
-      image[i][j] = 0.0;
-      tmp_image[i][j] = 0.0;
+      checker[i][j] = 0.0;
     }
   }
 
   // Checkerboard TODO: FIX TO ADAPT TO RANKS PROPERLY
     for (int i = 0; i < 8; ++i) {
-      for (int j = 0; j < 8/size; ++j) {
+      for (int j = 0; j < 8; ++j) {
         for (int ii = (i*nx/8)+1; ii < ((i+1)*nx/8)+1; ++ii) {
-          for (int jj = (j*ny/(8/size))+1; jj < ((j+1)*ny/(8/size))+1; ++jj) {
+          for (int jj = (j*ny/8)+1; jj < ((j+1)*ny/8)+1; ++jj) {
           if ((i+j)%2){
-            image[ii][jj] = 100.0;
-            tmp_image[ii][jj] = 100.0;
+            checker[ii][jj] = 100.0;
           }
         }
       }
     }
   }
+
+   //Copy specific section for current rank
+   //printf("Start: %d\n", rank*(ny/size)+1);
+   //printf("End: %d\n", rank*(ny/size)+local_ncols);
+   //printf("Local n cols: %d\n", local_ncols);
+   for (int i = 0; i < nx+2; ++i) {
+     for (int j = rank*(ny/size)+1; j <= rank*(ny/size)+local_ncols; ++j) {
+       image[i][j-rank*(ny/size)] = checker[i][j];
+       tmp_image[i][j-rank*(ny/size)] = checker[i][j];
+   }
+ }
+
 }
 
 // Routine to output the image in Netpbm grayscale binary image format
@@ -313,7 +329,15 @@ int main(int argc, char* argv[])
   ** no need to initialise the halo cells at this point
   */
 
-  init_image(local_nrows, local_ncols, u, w, size);
+  init_image(nx, ny, u, w, size, rank, local_ncols);
+
+  // for (int i = 0; i < local_nrows+2; i++){
+  //   for (int j = 0; j < local_ncols+2; j++){
+  //     printf("%6.2f ", w[i][j]);
+  //   }
+  //     printf("\n");
+  // }
+
 
   /*
   ** time loop
