@@ -134,7 +134,7 @@ void output_image(const char * file_name, const int nx, const int ny, float **im
 }
 
 
-void stencil(float **u, float **w, float *sendbuf, float *recvbuf,
+void stencil(float ** restrict u, float ** restrict w, float *sendbuf, float *recvbuf,
   int local_nrows, int local_ncols, int rank, int size, MPI_Status status){
 
   int ii, jj;             /* row and column indices for the grid */
@@ -266,8 +266,8 @@ int main(int argc, char* argv[])
   int local_nrows;       /* number of rows apportioned to this rank */
   int local_ncols;       /* number of columns apportioned to this rank */
   int remote_nrows;      /* number of columns apportioned to a remote rank */
-  float **u;            /* local temperature grid at time t - 1 */
-  float **w;            /* local temperature grid at time t     */
+  float ** restrict u;            /* local temperature grid at time t - 1 */
+  float ** restrict w;            /* local temperature grid at time t     */
   float **out;          /* grid for final result      */
   float *sendbuf;       /* buffer to hold values to send */
   float *recvbuf;       /* buffer to hold received values */
