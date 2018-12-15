@@ -58,7 +58,7 @@ int calc_nrows_from_rank(int rank, int size, int nx);
 double wtime(void);
 
 // Create the input image
-void init_image(const int nx, const int ny, float **  image, float **  tmp_image, int size, int rank, int local_nrows) {
+void init_image(const int nx, const int ny, float *  image, float *  tmp_image, int size, int rank, int local_nrows) {
   //Generate entire Checkerboard
   float **checker = (float**)malloc(sizeof(float*) * (nx+2));
   for (int ii=0;ii<nx+2;ii++) {
@@ -90,8 +90,8 @@ void init_image(const int nx, const int ny, float **  image, float **  tmp_image
    //printf("Local n cols: %d\n", local_ncols);
      for (int i = rank*(ny/size)+1; i <= rank*(nx/size)+local_nrows; ++i) {
        for (int j = 0; j < ny+2; ++j) {
-       image[i-rank*(ny/size)][j] = checker[i][j];
-       tmp_image[i-rank*(ny/size)][j] = checker[i][j];
+       image[(ny+2)*(i-rank*(ny/size))+j] = checker[i][j];
+       tmp_image[(ny+2)*(i-rank*(ny/size))+j] = checker[i][j];
    }
  }
 
@@ -134,7 +134,7 @@ void output_image(const char * file_name, const int nx, const int ny, float **im
 }
 
 
-void stencil(float ** restrict u, float ** restrict w, float *sendbuf, float *recvbuf,
+void stencil(float * restrict u, float * restrict w, float *sendbuf, float *recvbuf,
   int local_nrows, int local_ncols, int rank, int size, MPI_Status status){
 
   int ii, jj;             /* row and column indices for the grid */
@@ -161,7 +161,7 @@ void stencil(float ** restrict u, float ** restrict w, float *sendbuf, float *re
   /* send to the top, receive from bottom */
   if (rank != 0){
     for(ii=0;ii<local_ncols+2;ii++){
-      sendbuf[ii] = w[1][ii];
+      sendbuf[ii] = w[local_ncols+2+ii];
       //printf("up send %6.2f\n", sendbuf[ii]);
     }
     if (rank == size-1){
@@ -183,7 +183,7 @@ void stencil(float ** restrict u, float ** restrict w, float *sendbuf, float *re
       }
       //printf("Start recv up to rank: %d\n", rank);
       for(ii=0;ii<local_ncols+2;ii++){
-        w[local_nrows + 1][ii] = recvbuf[ii];
+        w[(local_ncols+2)*(local_nrows + 1) + ii] = recvbuf[ii];
         //printf("up recv %6.2f\n", w[ii][local_ncols + 1]);
       }
       //printf("End recv up to rank: %d\n", rank);
@@ -191,7 +191,7 @@ void stencil(float ** restrict u, float ** restrict w, float *sendbuf, float *re
   /* send to the bottom, receive from top */
   if (rank != size-1){
     for(ii=0;ii<local_ncols+2;ii++){
-      sendbuf[ii] = w[local_nrows][ii];
+      sendbuf[ii] = w[(local_ncols+2)*local_nrows+ii];
       //printf("down send %6.2f\n", sendbuf[ii]);
     }
     if (rank == 0){
@@ -213,7 +213,7 @@ void stencil(float ** restrict u, float ** restrict w, float *sendbuf, float *re
     }
     //printf("Start recv down to rank: %d\n", rank);
     for(ii=0;ii<local_ncols+2;ii++){
-      w[0][ii] = recvbuf[ii];
+      w[ii] = recvbuf[ii];
       //printf("down recv %6.2f\n", w[ii][0]);
     }
     //printf("End recv down to rank: %d\n", rank);
@@ -244,11 +244,11 @@ void stencil(float ** restrict u, float ** restrict w, float *sendbuf, float *re
 // end_col = local_ncols;
 //     }
     for(jj=1;jj<local_ncols+1;jj++) {
-      u[ii][jj] = w[ii][jj-1] * 0.1f;
-      u[ii][jj] += w[ii][jj] * 0.6f;
-      u[ii][jj] += w[ii][jj+1] * 0.1f;
-      u[ii][jj] += w[ii-1][jj] * 0.1f;
-      u[ii][jj] += w[ii+1][jj] * 0.1f;
+      u[(local_ncols+2)*ii+jj] = w[(local_ncols+2)*ii+jj-1] * 0.1f;
+      u[(local_ncols+2)*ii+jj] += w[(local_ncols+2)*ii+jj] * 0.6f;
+      u[(local_ncols+2)*ii+jj] += w[(local_ncols+2)*ii+jj+1] * 0.1f;
+      u[(local_ncols+2)*ii+jj] += w[(local_ncols+2)*(ii-1)+jj] * 0.1f;
+      u[(local_ncols+2)*ii+jj] += w[(local_ncols+2)*(ii+1)+jj] * 0.1f;
     }
   }
 }
@@ -266,8 +266,8 @@ int main(int argc, char* argv[])
   int local_nrows;       /* number of rows apportioned to this rank */
   int local_ncols;       /* number of columns apportioned to this rank */
   int remote_nrows;      /* number of columns apportioned to a remote rank */
-  float ** restrict u;            /* local temperature grid at time t - 1 */
-  float ** restrict w;            /* local temperature grid at time t     */
+  float * restrict u;            /* local temperature grid at time t - 1 */
+  float * restrict w;            /* local temperature grid at time t     */
   float **out;          /* grid for final result      */
   float *sendbuf;       /* buffer to hold values to send */
   float *recvbuf;       /* buffer to hold received values */
@@ -298,14 +298,8 @@ int main(int argc, char* argv[])
   ** - we'll use local grids for current and previous timesteps
   ** - buffers for message passing
   */
-   u = (float**)malloc(sizeof(float*) * (local_nrows + 2));
-   for(ii=0;ii<local_nrows+2;ii++) {
-     u[ii] = (float*)malloc(sizeof(float) * (local_ncols + 2));
-   }
-   w = (float**)malloc(sizeof(float*) * (local_nrows + 2));
-   for(ii=0;ii<local_nrows+2;ii++) {
-     w[ii] = (float*)malloc(sizeof(float) * (local_ncols + 2));
-   }
+  u = malloc(sizeof(float)*(local_nrows+2)*(local_ncols+2));
+  w = malloc(sizeof(float)*(local_nrows+2)*(local_ncols+2));
 
    out = (float**)malloc(sizeof(float*) * nx);
    for(ii=0;ii<nx;ii++) {
@@ -356,7 +350,7 @@ int main(int argc, char* argv[])
     // if (rank == 0){
     //   for (int i = 0; i < local_nrows+2; i++){
     //     for (int j = 0; j < local_ncols+2; j++){
-    //       printf("%6.2f ", w[i][j]);
+    //       printf("%6.2f ", w[(local_ncols+2)*i+j]);
     //     }
     //     printf("\n");
     //   }
@@ -377,7 +371,7 @@ int main(int argc, char* argv[])
   for(ii=1;ii<local_nrows+1;ii++) {
     if(rank == 0) {
       for(jj=1;jj<local_ncols + 1;jj++) {
-	       out[ii-1][jj-1] = w[ii][jj];
+	       out[ii-1][jj-1] = w[(local_ncols+2)*ii+jj];
       }
       for(kk=1;kk<size;kk++) { /* loop over other ranks */
 	       MPI_Recv(printbuf,local_ncols + 2,MPI_FLOAT,kk,tag,MPI_COMM_WORLD,&status);
@@ -387,7 +381,12 @@ int main(int argc, char* argv[])
       }
     }
     else {
-      MPI_Send(w[ii],local_ncols + 2,MPI_FLOAT,MASTER,tag,MPI_COMM_WORLD);
+      float *payload = (float*)malloc(sizeof(float) * (local_ncols+2));
+      for (int p = 1; p < local_ncols+1; p++){
+        payload[p] = w[(local_ncols+2)*ii+p];
+      }
+
+      MPI_Send(payload,local_ncols + 2,MPI_FLOAT,MASTER,tag,MPI_COMM_WORLD);
     }
   }
 
@@ -399,7 +398,11 @@ int main(int argc, char* argv[])
 	     }
     }
     else if(rank == size-1) {
-      MPI_Send(w[ii],local_ncols + 2,MPI_FLOAT,MASTER,tag,MPI_COMM_WORLD);
+      float *payload = (float*)malloc(sizeof(float) * (local_ncols+2));
+      for (int p = 1; p < local_ncols+1; p++){
+        payload[p] = w[(local_ncols+2)*ii+p];
+      }
+      MPI_Send(payload,local_ncols + 2,MPI_FLOAT,MASTER,tag,MPI_COMM_WORLD);
     }
   }
 
@@ -420,10 +423,6 @@ int main(int argc, char* argv[])
    MPI_Finalize();
 
   /* free up allocated memory */
-  for(ii=0;ii<local_nrows;ii++) {
-   free(u[ii]);
-   free(w[ii]);
-  }
   free(u);
   free(w);
   free(sendbuf);
