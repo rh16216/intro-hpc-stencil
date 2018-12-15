@@ -72,7 +72,6 @@ void init_image(const int nx, const int ny, float **  image, float **  tmp_image
     }
   }
 
-  // Checkerboard TODO: FIX TO ADAPT TO RANKS PROPERLY
     for (int i = 0; i < 8; ++i) {
       for (int j = 0; j < 8; ++j) {
         for (int ii = (i*nx/8)+1; ii < ((i+1)*nx/8)+1; ++ii) {
