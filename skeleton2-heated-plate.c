@@ -54,11 +54,11 @@
 #define OUTPUT_FILE "stencil.pgm"
 
 /* function prototypes */
-int calc_ncols_from_rank(int rank, int size, int ny);
+int calc_nrows_from_rank(int rank, int size, int nx);
 double wtime(void);
 
 // Create the input image
-void init_image(const int nx, const int ny, float **  image, float **  tmp_image, int size, int rank, int local_ncols) {
+void init_image(const int nx, const int ny, float **  image, float **  tmp_image, int size, int rank, int local_nrows) {
   //Generate entire Checkerboard
   float **checker = (float**)malloc(sizeof(float*) * (nx+2));
   for (int ii=0;ii<nx+2;ii++) {
@@ -88,10 +88,10 @@ void init_image(const int nx, const int ny, float **  image, float **  tmp_image
    //printf("Start: %d\n", rank*(ny/size)+1);
    //printf("End: %d\n", rank*(ny/size)+local_ncols);
    //printf("Local n cols: %d\n", local_ncols);
-   for (int i = 0; i < nx+2; ++i) {
-     for (int j = rank*(ny/size)+1; j <= rank*(ny/size)+local_ncols; ++j) {
-       image[i][j-rank*(ny/size)] = checker[i][j];
-       tmp_image[i][j-rank*(ny/size)] = checker[i][j];
+     for (int i = rank*(ny/size)+1; i <= rank*(nx/size)+local_nrows; ++i) {
+       for (int j = 0; j < ny+2; ++j) {
+       image[i-rank*(ny/size)][j] = checker[i][j];
+       tmp_image[i-rank*(ny/size)][j] = checker[i][j];
    }
  }
 
@@ -138,85 +138,85 @@ void stencil(float **u, float **w, float *sendbuf, float *recvbuf,
   int local_nrows, int local_ncols, int rank, int size, MPI_Status status){
 
   int ii, jj;             /* row and column indices for the grid */
-  int tag = 0;           /* scope for adding extra information to a message */
-  int left;              /* the rank of the process to the left */
-  int right;             /* the rank of the process to the right */
+  int tag = 0;            /* scope for adding extra information to a message */
+  int up;                 /* the rank of the process above */
+  int down;               /* the rank of the process below */
 
   /*
-  ** determine process ranks to the left and right of rank
+  ** determine process ranks above and below the rank
   ** respecting periodic boundary conditions
   */
-  left = (rank == MASTER) ? (rank + size - 1) : (rank - 1);
-  right = (rank + 1) % size;
+  up = (rank == MASTER) ? (rank + size - 1) : (rank - 1);
+  down = (rank + 1) % size;
   /*
   ** halo exchange for the local grids w:
-  ** - first send to the left and receive from the right,
-  ** - then send to the right and receive from the left.
+  ** - first send to the top and receive from the bottom,
+  ** - then send to the bottom and receive from the top.
   ** for each direction:
   ** - first, pack the send buffer using values from the grid
   ** - exchange using MPI_Sendrecv()
   ** - unpack values from the recieve buffer into the grid
   */
 
-  /* send to the left, receive from right */
+  /* send to the top, receive from bottom */
   if (rank != 0){
-    for(ii=0;ii<local_nrows+2;ii++){
-      sendbuf[ii] = w[ii][1];
-      //printf("left send %6.2f\n", sendbuf[ii]);
+    for(ii=0;ii<local_ncols+2;ii++){
+      sendbuf[ii] = w[1][ii];
+      //printf("up send %6.2f\n", sendbuf[ii]);
     }
     if (rank == size-1){
-      MPI_Send(sendbuf, local_nrows+2, MPI_FLOAT,
-               left, tag, MPI_COMM_WORLD);
+      MPI_Send(sendbuf, local_ncols+2, MPI_FLOAT,
+               up, tag, MPI_COMM_WORLD);
     }
     else{
-      //printf("Start send left from rank: %d\n", rank);
-      MPI_Sendrecv(sendbuf, local_nrows+2, MPI_FLOAT, left, tag,
-       recvbuf, local_nrows+2, MPI_FLOAT, right, tag,
+      //printf("Start send up from rank: %d\n", rank);
+      MPI_Sendrecv(sendbuf, local_ncols+2, MPI_FLOAT, up, tag,
+       recvbuf, local_ncols+2, MPI_FLOAT, down, tag,
        MPI_COMM_WORLD, &status);
-      //printf("End send left from rank: %d\n", rank);
+      //printf("End send up from rank: %d\n", rank);
     }
    }
     if (rank != size-1){
       if (rank == 0){
-        MPI_Recv(recvbuf, local_nrows+2, MPI_FLOAT,
-                 right, tag, MPI_COMM_WORLD, &status);
+        MPI_Recv(recvbuf, local_ncols+2, MPI_FLOAT,
+                 down, tag, MPI_COMM_WORLD, &status);
       }
-      //printf("Start recv left to rank: %d\n", rank);
-      for(ii=0;ii<local_nrows+2;ii++){
-        w[ii][local_ncols + 1] = recvbuf[ii];
-        //printf("left recv %6.2f\n", w[ii][local_ncols + 1]);
+      //printf("Start recv up to rank: %d\n", rank);
+      for(ii=0;ii<local_ncols+2;ii++){
+        w[local_nrows + 1][ii] = recvbuf[ii];
+        //printf("up recv %6.2f\n", w[ii][local_ncols + 1]);
       }
-      //printf("End recv left to rank: %d\n", rank);
+      //printf("End recv up to rank: %d\n", rank);
     }
-  /* send to the right, receive from left */
+  /* send to the bottom, receive from top */
   if (rank != size-1){
-    for(ii=0;ii<local_nrows+2;ii++){
-      sendbuf[ii] = w[ii][local_ncols];
-      //printf("right send %6.2f\n", sendbuf[ii]);
+    for(ii=0;ii<local_ncols+2;ii++){
+      sendbuf[ii] = w[local_nrows][ii];
+      //printf("down send %6.2f\n", sendbuf[ii]);
     }
     if (rank == 0){
-      MPI_Send(sendbuf, local_nrows+2, MPI_FLOAT,
-               right, tag, MPI_COMM_WORLD);
+      MPI_Send(sendbuf, local_ncols+2, MPI_FLOAT,
+               down, tag, MPI_COMM_WORLD);
     }
     else{
-      //printf("Start send right from rank: %d\n", rank);
-      MPI_Sendrecv(sendbuf, local_nrows+2, MPI_FLOAT, right, tag,
-       recvbuf, local_nrows+2, MPI_FLOAT, left, tag,
+      //printf("Start send down from rank: %d\n", rank);
+      MPI_Sendrecv(sendbuf, local_ncols+2, MPI_FLOAT, down, tag,
+       recvbuf, local_ncols+2, MPI_FLOAT, up, tag,
        MPI_COMM_WORLD, &status);
-      //printf("End send right from rank: %d\n", rank);
+      //printf("End send down from rank: %d\n", rank);
     }
    }
    if (rank != 0){
     if (rank == size-1){
-       MPI_Recv(recvbuf, local_nrows+2, MPI_FLOAT,
-                left, tag, MPI_COMM_WORLD, &status);
+       MPI_Recv(recvbuf, local_ncols+2, MPI_FLOAT,
+                up, tag, MPI_COMM_WORLD, &status);
     }
-    //printf("Start recv right to rank: %d\n", rank);
-    for(ii=0;ii<local_nrows+2;ii++){
-      w[ii][0] = recvbuf[ii];
-      //printf("right recv %6.2f\n", w[ii][0]);
+    //printf("Start recv down to rank: %d\n", rank);
+    for(ii=0;ii<local_ncols+2;ii++){
+      w[0][ii] = recvbuf[ii];
+      //printf("down recv %6.2f\n", w[ii][0]);
     }
-    //printf("End recv right to rank: %d\n", rank);
+    //printf("End recv down to rank: %d\n", rank);
   }
   /*
   ** copy the old solution into the u grid
@@ -265,7 +265,7 @@ int main(int argc, char* argv[])
   int tag = 0;           /* scope for adding extra information to a message */
   int local_nrows;       /* number of rows apportioned to this rank */
   int local_ncols;       /* number of columns apportioned to this rank */
-  int remote_ncols;      /* number of columns apportioned to a remote rank */
+  int remote_nrows;      /* number of columns apportioned to a remote rank */
   float **u;            /* local temperature grid at time t - 1 */
   float **w;            /* local temperature grid at time t     */
   float **out;          /* grid for final result      */
@@ -289,8 +289,8 @@ int main(int argc, char* argv[])
   ** determine local grid size
   ** each rank gets all the rows, but a subset of the number of columns
   */
-  local_nrows = nx;
-  local_ncols = calc_ncols_from_rank(rank, size, ny);
+  local_nrows = calc_nrows_from_rank(rank, size, nx);
+  local_ncols = ny;
 
   /*
   ** allocate space for:
@@ -312,12 +312,12 @@ int main(int argc, char* argv[])
      out[ii] = (float*)malloc(sizeof(float) * ny);
    }
 
-   sendbuf = (float*)malloc(sizeof(float) * (local_nrows+2));
-   recvbuf = (float*)malloc(sizeof(float) * (local_nrows+2));
+   sendbuf = (float*)malloc(sizeof(float) * (local_ncols+2));
+   recvbuf = (float*)malloc(sizeof(float) * (local_ncols+2));
   //    printbuf must be big enough to hold this number */
-  // /* The last rank has the most columns apportioned.
-   remote_ncols = calc_ncols_from_rank(size-1, size, ny);
-   printbuf = (float*)malloc(sizeof(float) * (remote_ncols + 2));
+  // /* The last rank has the most rows apportioned.
+   remote_nrows = calc_nrows_from_rank(size-1, size, nx);
+   printbuf = (float*)malloc(sizeof(float) * (local_ncols + 2));
 
   /*
   ** initialize the local grid for the present time (w):
@@ -328,7 +328,7 @@ int main(int argc, char* argv[])
   ** no need to initialise the halo cells at this point
   */
 
-  init_image(nx, ny, u, w, size, rank, local_ncols);
+  init_image(nx, ny, u, w, size, rank, local_nrows);
 
   // for (int i = 0; i < local_nrows+2; i++){
   //   for (int j = 0; j < local_ncols+2; j++){
@@ -380,14 +380,25 @@ int main(int argc, char* argv[])
 	       out[ii-1][jj-1] = w[ii][jj];
       }
       for(kk=1;kk<size;kk++) { /* loop over other ranks */
-	       remote_ncols = calc_ncols_from_rank(kk, size, ny);
-	       MPI_Recv(printbuf,remote_ncols + 2,MPI_FLOAT,kk,tag,MPI_COMM_WORLD,&status);
-	         for(jj=1;jj<remote_ncols + 1;jj++) {
-	            out[ii-1][kk*local_ncols+jj-1] = printbuf[jj];
+	       MPI_Recv(printbuf,local_ncols + 2,MPI_FLOAT,kk,tag,MPI_COMM_WORLD,&status);
+	         for(jj=1;jj<local_ncols + 1;jj++) {
+	            out[kk*local_nrows+ii-1][jj-1] = printbuf[jj];
 	         }
       }
     }
     else {
+      MPI_Send(w[ii],local_ncols + 2,MPI_FLOAT,MASTER,tag,MPI_COMM_WORLD);
+    }
+  }
+
+  for(ii=local_nrows+1; ii<remote_nrows+1;ii++) {
+    if(rank == 0) {
+	     MPI_Recv(printbuf,local_ncols + 2,MPI_FLOAT,size-1,tag,MPI_COMM_WORLD,&status);
+	     for(jj=1;jj<local_ncols + 1;jj++) {
+	        out[(size-1)*local_nrows+ii-1][jj-1] = printbuf[jj];
+	     }
+    }
+    else if(rank == size-1) {
       MPI_Send(w[ii],local_ncols + 2,MPI_FLOAT,MASTER,tag,MPI_COMM_WORLD);
     }
   }
@@ -423,17 +434,17 @@ int main(int argc, char* argv[])
   return EXIT_SUCCESS;
 }
 
-int calc_ncols_from_rank(int rank, int size, int ny)
+int calc_nrows_from_rank(int rank, int size, int nx)
 {
-  int ncols;
+  int nrows;
 
-  ncols = ny / size;       /* integer division */
-  if ((ny % size) != 0) {  /* if there is a remainder */
+  nrows = nx / size;       /* integer division */
+  if ((nx % size) != 0) {  /* if there is a remainder */
     if (rank == size - 1)
-      ncols += ny % size;  /* add remainder to last rank */
+      nrows += nx % size;  /* add remainder to last rank */
   }
 
-   return ncols;
+   return nrows;
 }
 
 // Get the current time in seconds since the Epoch
