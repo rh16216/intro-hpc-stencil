@@ -1,4 +1,4 @@
-#!/bin/bash 
+#!/bin/bash
 #!
 #! Sample PBS file
 #!
@@ -9,8 +9,8 @@
 #PBS -q teaching
 
 #! Number of nodes (in this case 1 node with 4 CPU cores)
-#! The total number of nodes passed to mpirun will be nodes*ppn 
-#! Second entry: Total amount of wall-clock time (true, elapsed time). 
+#! The total number of nodes passed to mpirun will be nodes*ppn
+#! Second entry: Total amount of wall-clock time (true, elapsed time).
 #! 00:05:00 indicates 05 minutes.
 
 #PBS -l nodes=1:ppn=4,walltime=00:05:00
@@ -19,13 +19,13 @@
 #PBS -m a
 
 #! application name
-application="./skeleton2-headed-plate 1024 1024 100"
+application="./stencil 1024 1024 100"
 
 #! Run options for the application
 options=""
 
-module add openmpi/gcc/64/1.6.5
-module add tools/gnu_builds/tau-2.23.1-openmpi
+module load languages/intel-compiler-16-u2
+module add languages/python-2.7.6
 
 
 ###############################################################
@@ -42,7 +42,7 @@ echo Directory is `pwd`
 echo PBS job ID is $PBS_JOBID
 echo This jobs runs on the following machines:
 echo `cat $PBS_NODEFILE | uniq`
- 
+
 #! Create a machine file for MPI
 cat $PBS_NODEFILE > machine.file.$PBS_JOBID
 
@@ -51,6 +51,7 @@ numnodes=`wc $PBS_NODEFILE | awk '{ print $1 }'`
 #! Run the parallel MPI executable (nodes*ppn)
 mpirun -np $numnodes -machinefile machine.file.$PBS_JOBID $application $options
 
-module remove openmpi/gcc/64/1.6.5
-module remove tools/gnu_builds/tau-2.23.1-openmpi
+python check.py --ref-stencil-file stencil_1024_1024_100.pgm --stencil-file stencil.pgm
 
+module remove languages/intel-compiler-16-u2
+module remove languages/python-2.7.6
