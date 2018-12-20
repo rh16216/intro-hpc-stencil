@@ -85,9 +85,6 @@ void init_image(const int nx, const int ny, float *  image, float *  tmp_image, 
   }
 
    //Copy specific section for current rank
-   //printf("Start: %d\n", rank*(ny/size)+1);
-   //printf("End: %d\n", rank*(ny/size)+local_ncols);
-   //printf("Local n cols: %d\n", local_ncols);
      for (int i = rank*(ny/size)+1; i <= rank*(nx/size)+local_nrows; ++i) {
        for (int j = 0; j < ny+2; ++j) {
        image[(ny+2)*(i-rank*(ny/size))+j] = checker[i][j];
@@ -162,18 +159,15 @@ void stencil(float * restrict u, float * restrict w, float *sendbuf, float *recv
   if (rank != 0){
     for(ii=0;ii<local_ncols+2;ii++){
       sendbuf[ii] = w[local_ncols+2+ii];
-      //printf("up send %6.2f\n", sendbuf[ii]);
     }
     if (rank == size-1){
       MPI_Send(sendbuf, local_ncols+2, MPI_FLOAT,
                up, tag, MPI_COMM_WORLD);
     }
     else{
-      //printf("Start send up from rank: %d\n", rank);
       MPI_Sendrecv(sendbuf, local_ncols+2, MPI_FLOAT, up, tag,
        recvbuf, local_ncols+2, MPI_FLOAT, down, tag,
        MPI_COMM_WORLD, &status);
-      //printf("End send up from rank: %d\n", rank);
     }
    }
     if (rank != size-1){
@@ -181,29 +175,23 @@ void stencil(float * restrict u, float * restrict w, float *sendbuf, float *recv
         MPI_Recv(recvbuf, local_ncols+2, MPI_FLOAT,
                  down, tag, MPI_COMM_WORLD, &status);
       }
-      //printf("Start recv up to rank: %d\n", rank);
       for(ii=0;ii<local_ncols+2;ii++){
         w[(local_ncols+2)*(local_nrows + 1) + ii] = recvbuf[ii];
-        //printf("up recv %6.2f\n", w[ii][local_ncols + 1]);
       }
-      //printf("End recv up to rank: %d\n", rank);
     }
   /* send to the bottom, receive from top */
   if (rank != size-1){
     for(ii=0;ii<local_ncols+2;ii++){
       sendbuf[ii] = w[(local_ncols+2)*local_nrows+ii];
-      //printf("down send %6.2f\n", sendbuf[ii]);
     }
     if (rank == 0){
       MPI_Send(sendbuf, local_ncols+2, MPI_FLOAT,
                down, tag, MPI_COMM_WORLD);
     }
     else{
-      //printf("Start send down from rank: %d\n", rank);
       MPI_Sendrecv(sendbuf, local_ncols+2, MPI_FLOAT, down, tag,
        recvbuf, local_ncols+2, MPI_FLOAT, up, tag,
        MPI_COMM_WORLD, &status);
-      //printf("End send down from rank: %d\n", rank);
     }
    }
    if (rank != 0){
@@ -211,38 +199,17 @@ void stencil(float * restrict u, float * restrict w, float *sendbuf, float *recv
        MPI_Recv(recvbuf, local_ncols+2, MPI_FLOAT,
                 up, tag, MPI_COMM_WORLD, &status);
     }
-    //printf("Start recv down to rank: %d\n", rank);
     for(ii=0;ii<local_ncols+2;ii++){
       w[ii] = recvbuf[ii];
-      //printf("down recv %6.2f\n", w[ii][0]);
     }
-    //printf("End recv down to rank: %d\n", rank);
   }
-  /*
-  ** copy the old solution into the u grid
-  */
-  //for (int q = 0; q < local_nrows+2; q++){
-  //  printf("%f\n", w[q][0]);
-  //}
-  //printf("NO MORE COMMUNICATION\n");
+
   /*
   ** compute new values of w using u
   ** looping extents depend on rank, as we don't
   ** want to overwrite any boundary conditions
   */
   for(ii=1;ii<local_nrows+1;ii++) {
-//     if(rank == 0) {
-// start_col = 2;
-// end_col = local_ncols;
-//     }
-//     else if(rank == size -1) {
-// start_col = 1;
-// end_col = local_ncols - 1;
-//     }
-//     else {
-// start_col = 1;
-// end_col = local_ncols;
-//     }
     for(jj=1;jj<local_ncols+1;jj++) {
       u[(local_ncols+2)*ii+jj] = w[(local_ncols+2)*ii+jj-1] * 0.1f;
       u[(local_ncols+2)*ii+jj] += w[(local_ncols+2)*ii+jj] * 0.6f;
@@ -257,7 +224,6 @@ int main(int argc, char* argv[])
 {
   int ii, jj;             /* row and column indices for the grid */
   int kk;                /* index for looping over ranks */
-  //int start_col,end_col; /* rank dependent looping indices */
   int iter;              /* index for timestep iterations */
   int rank;              /* the rank of this process */
   int size;              /* number of processes in the communicator */
@@ -324,14 +290,6 @@ int main(int argc, char* argv[])
 
   init_image(nx, ny, u, w, size, rank, local_nrows);
 
-  // for (int i = 0; i < local_nrows+2; i++){
-  //   for (int j = 0; j < local_ncols+2; j++){
-  //     printf("%6.2f ", w[i][j]);
-  //   }
-  //     printf("\n");
-  // }
-
-
   /*
   ** time loop
   */
@@ -347,14 +305,6 @@ int main(int argc, char* argv[])
      printf(" runtime: %lf s\n", toc-tic);
      printf("------------------------------------\n");
    }
-    // if (rank == 0){
-    //   for (int i = 0; i < local_nrows+2; i++){
-    //     for (int j = 0; j < local_ncols+2; j++){
-    //       printf("%6.2f ", w[(local_ncols+2)*i+j]);
-    //     }
-    //     printf("\n");
-    //   }
-    // }
 
   /*
   ** at the end, write out the solution.
@@ -407,16 +357,7 @@ int main(int argc, char* argv[])
   }
 
 
-  //if(rank == MASTER){
-  //   for (int i = 0; i < nx; i++){
-  //     for (int j = 0; j < ny; j++){
-  //       printf("%6.2f ", out[i][j]);
-  //     }
-  //     printf("\n");
-  //   }
-  // }
   if(rank == MASTER){
-    //printf("FILE OUTPUT\n");
     output_image(OUTPUT_FILE, nx, ny, out);
   }
    /* don't forget to tidy up when we're done */
